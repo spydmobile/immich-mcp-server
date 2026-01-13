@@ -1,4 +1,7 @@
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
+import FormData from 'form-data';
+import * as fs from 'fs';
+import * as path from 'path';
 import { config } from '../utils/config.js';
 import { logger } from '../utils/logger.js';
 
@@ -145,6 +148,54 @@ export class ImmichApiClient {
    */
   async delete<T = any>(endpoint: string, data?: any): Promise<T> {
     const response = await this.client.delete<T>(endpoint, { data });
+    return response.data;
+  }
+
+  /**
+   * Upload a file as an asset to Immich
+   */
+  async uploadAsset(
+    filePath: string,
+    options?: {
+      deviceAssetId?: string;
+      deviceId?: string;
+      fileCreatedAt?: string;
+      fileModifiedAt?: string;
+    }
+  ): Promise<any> {
+    const absolutePath = path.resolve(filePath);
+
+    if (!fs.existsSync(absolutePath)) {
+      throw new Error(`File not found: ${absolutePath}`);
+    }
+
+    const stats = fs.statSync(absolutePath);
+    const filename = path.basename(absolutePath);
+
+    // Generate required fields if not provided
+    const deviceAssetId = options?.deviceAssetId || `${filename}-${Date.now()}`;
+    const deviceId = options?.deviceId || 'mcp-server';
+    const fileCreatedAt = options?.fileCreatedAt || stats.birthtime.toISOString();
+    const fileModifiedAt = options?.fileModifiedAt || stats.mtime.toISOString();
+
+    const form = new FormData();
+    form.append('assetData', fs.createReadStream(absolutePath), filename);
+    form.append('deviceAssetId', deviceAssetId);
+    form.append('deviceId', deviceId);
+    form.append('fileCreatedAt', fileCreatedAt);
+    form.append('fileModifiedAt', fileModifiedAt);
+
+    logger.debug('Uploading asset', { filePath: absolutePath, filename, deviceAssetId });
+
+    const response = await this.client.post('/api/assets', form, {
+      headers: {
+        ...form.getHeaders(),
+        'X-API-Key': config.IMMICH_API_KEY,
+      },
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity,
+    });
+
     return response.data;
   }
 

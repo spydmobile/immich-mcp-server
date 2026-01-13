@@ -183,6 +183,30 @@ export class AssetsTool {
           },
         },
       },
+      {
+        name: 'assets_upload',
+        description: 'Upload one or more files to the Immich library. Optionally add to an album.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            filePaths: {
+              type: 'array',
+              items: { type: 'string' },
+              minItems: 1,
+              description: 'Array of file paths to upload (absolute paths)',
+            },
+            albumId: {
+              type: 'string',
+              description: 'Optional album ID to add uploaded assets to',
+            },
+            albumName: {
+              type: 'string',
+              description: 'Optional album name to add uploaded assets to (creates album if not found)',
+            },
+          },
+          required: ['filePaths'],
+        },
+      },
     ];
   }
 
@@ -205,6 +229,8 @@ export class AssetsTool {
           return await this.getAssetStatistics(args);
         case 'assets_get_random':
           return await this.getRandomAssets(args);
+        case 'assets_upload':
+          return await this.uploadAssets(args);
         default:
           throw new Error(`Unknown assets tool: ${name}`);
       }
@@ -296,5 +322,75 @@ export class AssetsTool {
     const params = { count };
 
     return await immichApi.get<AssetResponseDto[]>('/api/assets/random', params);
+  }
+
+  private static async uploadAssets(args: any): Promise<{
+    success: boolean;
+    uploaded: Array<{ filePath: string; assetId: string; status: string }>;
+    failed: Array<{ filePath: string; error: string }>;
+    albumId?: string;
+  }> {
+    const { filePaths, albumId, albumName } = args;
+
+    const uploaded: Array<{ filePath: string; assetId: string; status: string }> = [];
+    const failed: Array<{ filePath: string; error: string }> = [];
+
+    // Upload each file
+    for (const filePath of filePaths) {
+      try {
+        const result = await immichApi.uploadAsset(filePath);
+        uploaded.push({
+          filePath,
+          assetId: result.id,
+          status: result.status || 'created',
+        });
+        logger.info(`Uploaded asset: ${filePath} -> ${result.id}`);
+      } catch (error: any) {
+        const errorMessage = error.message || 'Unknown error';
+        failed.push({ filePath, error: errorMessage });
+        logger.error(`Failed to upload asset: ${filePath}`, error);
+      }
+    }
+
+    // If album specified and we have uploads, add to album
+    let targetAlbumId = albumId;
+
+    if ((albumId || albumName) && uploaded.length > 0) {
+      try {
+        // If albumName provided but not albumId, find or create the album
+        if (!albumId && albumName) {
+          // Search for existing album
+          const albums = await immichApi.get<any[]>('/api/albums');
+          const existingAlbum = albums.find(
+            (a: any) => a.albumName.toLowerCase() === albumName.toLowerCase()
+          );
+
+          if (existingAlbum) {
+            targetAlbumId = existingAlbum.id;
+            logger.info(`Found existing album: ${albumName} (${targetAlbumId})`);
+          } else {
+            // Create new album
+            const newAlbum = await immichApi.post('/api/albums', { albumName });
+            targetAlbumId = newAlbum.id;
+            logger.info(`Created new album: ${albumName} (${targetAlbumId})`);
+          }
+        }
+
+        // Add assets to album
+        const assetIds = uploaded.map((u) => u.assetId);
+        await immichApi.put(`/api/albums/${targetAlbumId}/assets`, { ids: assetIds });
+        logger.info(`Added ${assetIds.length} assets to album ${targetAlbumId}`);
+      } catch (error: any) {
+        logger.error(`Failed to add assets to album`, error);
+        // Don't fail the whole operation - assets are uploaded, just album add failed
+      }
+    }
+
+    return {
+      success: failed.length === 0,
+      uploaded,
+      failed,
+      albumId: targetAlbumId,
+    };
   }
 }

@@ -197,6 +197,33 @@ export class SearchTool {
           },
         },
       },
+      {
+        name: 'search_by_filename',
+        description: 'Search assets by original filename. Supports exact match or pattern matching.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            filename: {
+              type: 'string',
+              description: 'Original filename to search for (e.g., "IMG_1234.jpg" or partial match)',
+            },
+            size: {
+              type: 'number',
+              minimum: 1,
+              maximum: 1000,
+              default: 250,
+              description: 'Number of results per page',
+            },
+            page: {
+              type: 'number',
+              minimum: 1,
+              default: 1,
+              description: 'Page number for pagination',
+            },
+          },
+          required: ['filename'],
+        },
+      },
     ];
   }
 
@@ -213,6 +240,8 @@ export class SearchTool {
           return await this.metadataSearch(args);
         case 'search_explore':
           return await this.exploreSearch(args);
+        case 'search_by_filename':
+          return await this.filenameSearch(args);
         default:
           throw new Error(`Unknown search tool: ${name}`);
       }
@@ -286,5 +315,18 @@ export class SearchTool {
     // This endpoint structure may vary depending on Immich version
     // Implementing as a general explore endpoint
     return await immichApi.get('/api/search/explore', args);
+  }
+
+  private static async filenameSearch(args: any): Promise<any> {
+    const { filename, page = 1, size = 250 } = args;
+
+    // Use POST /api/search/metadata with originalFileName
+    const searchPayload = {
+      originalFileName: filename,
+      page,
+      size,
+    };
+
+    return await immichApi.post('/api/search/metadata', searchPayload);
   }
 }
