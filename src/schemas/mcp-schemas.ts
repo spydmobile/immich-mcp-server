@@ -34,6 +34,15 @@ export const AddAssetsToAlbumInputSchema = z.object({
   assetIds: z.array(z.string()).min(1, 'At least one asset ID is required'),
 });
 
+export const GetAlbumSummaryInputSchema = z.object({
+  albumId: z.string().min(1, 'Album ID is required'),
+});
+
+export const CheckAssetsInAlbumInputSchema = z.object({
+  albumId: z.string().min(1, 'Album ID is required'),
+  assetIds: z.array(z.string()).min(1, 'At least one asset ID is required'),
+});
+
 // Assets Tool Schemas
 export const ListAssetsInputSchema = z.object({
   page: z.number().min(1).default(1),
@@ -161,6 +170,8 @@ export type CreateAlbumInput = z.infer<typeof CreateAlbumInputSchema>;
 export type UpdateAlbumInput = z.infer<typeof UpdateAlbumInputSchema>;
 export type DeleteAlbumInput = z.infer<typeof DeleteAlbumInputSchema>;
 export type AddAssetsToAlbumInput = z.infer<typeof AddAssetsToAlbumInputSchema>;
+export type GetAlbumSummaryInput = z.infer<typeof GetAlbumSummaryInputSchema>;
+export type CheckAssetsInAlbumInput = z.infer<typeof CheckAssetsInAlbumInputSchema>;
 
 export type ListAssetsInput = z.infer<typeof ListAssetsInputSchema>;
 export type GetAssetInput = z.infer<typeof GetAssetInputSchema>;

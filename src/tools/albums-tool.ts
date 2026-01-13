@@ -8,11 +8,15 @@ import {
   UpdateAlbumInputSchema,
   DeleteAlbumInputSchema,
   AddAssetsToAlbumInputSchema,
+  GetAlbumSummaryInputSchema,
+  CheckAssetsInAlbumInputSchema,
   type ListAlbumsInput,
   type CreateAlbumInput,
   type UpdateAlbumInput,
   type DeleteAlbumInput,
   type AddAssetsToAlbumInput,
+  type GetAlbumSummaryInput,
+  type CheckAssetsInAlbumInput,
 } from '../schemas/mcp-schemas.js';
 
 export class AlbumsTool {
@@ -146,6 +150,39 @@ export class AlbumsTool {
           required: ['albumId', 'assetIds'],
         },
       },
+      {
+        name: 'albums_get_summary',
+        description: 'Get lightweight album summary without the full asset list. Returns album metadata, asset count, and date range only. Use this instead of albums_get when you only need album info without asset details.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            albumId: {
+              type: 'string',
+              description: 'ID of the album to retrieve summary for',
+            },
+          },
+          required: ['albumId'],
+        },
+      },
+      {
+        name: 'albums_check_assets',
+        description: 'Check if specific assets are members of an album. Returns membership status for each asset ID without fetching the full album.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            albumId: {
+              type: 'string',
+              description: 'ID of the album to check',
+            },
+            assetIds: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Array of asset IDs to check membership for',
+            },
+          },
+          required: ['albumId', 'assetIds'],
+        },
+      },
     ];
   }
 
@@ -168,6 +205,10 @@ export class AlbumsTool {
           return await this.addAssetsToAlbum(args);
         case 'albums_remove_assets':
           return await this.removeAssetsFromAlbum(args);
+        case 'albums_get_summary':
+          return await this.getAlbumSummary(args);
+        case 'albums_check_assets':
+          return await this.checkAssetsInAlbum(args);
         default:
           throw new Error(`Unknown albums tool: ${name}`);
       }
@@ -245,11 +286,78 @@ export class AlbumsTool {
 
   private static async removeAssetsFromAlbum(args: any): Promise<Album> {
     const input = AddAssetsToAlbumInputSchema.parse(args); // Same schema
-    
+
     const requestData = {
       ids: input.assetIds,
     };
 
     return await immichApi.delete<Album>(`/api/albums/${input.albumId}/assets`, requestData);
+  }
+
+  private static async getAlbumSummary(args: any): Promise<{
+    id: string;
+    albumName: string;
+    description: string;
+    assetCount: number;
+    startDate: string | null;
+    endDate: string | null;
+    createdAt: string;
+    updatedAt: string;
+    ownerId: string;
+    shared: boolean;
+  }> {
+    const input = GetAlbumSummaryInputSchema.parse(args);
+
+    const album = await immichApi.get<Album>(`/api/albums/${input.albumId}`);
+
+    // Return only metadata, not the assets array
+    return {
+      id: album.id,
+      albumName: album.albumName,
+      description: album.description || '',
+      assetCount: album.assetCount || (album.assets?.length ?? 0),
+      startDate: album.startDate || null,
+      endDate: album.endDate || null,
+      createdAt: album.createdAt,
+      updatedAt: album.updatedAt,
+      ownerId: album.ownerId,
+      shared: album.shared || false,
+    };
+  }
+
+  private static async checkAssetsInAlbum(args: any): Promise<{
+    albumId: string;
+    results: Record<string, boolean>;
+    memberCount: number;
+    nonMemberCount: number;
+  }> {
+    const input = CheckAssetsInAlbumInputSchema.parse(args);
+
+    const album = await immichApi.get<Album>(`/api/albums/${input.albumId}`);
+
+    // Build a Set of asset IDs in the album for O(1) lookup
+    const albumAssetIds = new Set(album.assets?.map(a => a.id) || []);
+
+    // Check each requested asset
+    const results: Record<string, boolean> = {};
+    let memberCount = 0;
+    let nonMemberCount = 0;
+
+    for (const assetId of input.assetIds) {
+      const isMember = albumAssetIds.has(assetId);
+      results[assetId] = isMember;
+      if (isMember) {
+        memberCount++;
+      } else {
+        nonMemberCount++;
+      }
+    }
+
+    return {
+      albumId: input.albumId,
+      results,
+      memberCount,
+      nonMemberCount,
+    };
   }
 }
